@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LibraryTest {
     @Test void someLibraryMethodReturnsTrue() {
-//        Library classUnderTest = new Library();
+        Library classUnderTest = new Library();
 
     }
 }

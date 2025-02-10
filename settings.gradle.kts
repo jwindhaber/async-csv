@@ -12,3 +12,4 @@ plugins {
 
 rootProject.name = "async-csv"
 include("async-csv")
+include("async-sandbox")

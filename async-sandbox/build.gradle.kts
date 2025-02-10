@@ -8,8 +8,6 @@
 plugins {
     // Apply the java-library plugin for API and implementation separation.
     `java-library`
-    id("me.champeau.jmh") version "0.7.3"
-
 }
 
 repositories {
@@ -18,6 +16,8 @@ repositories {
 }
 
 dependencies {
+
+    implementation(project(":async-csv"))
     // Use JUnit Jupiter for testing.
     testImplementation(libs.junit.jupiter)
 
@@ -31,7 +31,7 @@ dependencies {
     //implementation()
     // Add Project Reactor dependency
     implementation(libs.reactor.core)
-
+    implementation("org.apache.commons:commons-compress:1.27.1")
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
@@ -44,10 +44,4 @@ java {
 tasks.named<Test>("test") {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
-}
-
-jmh {
-    warmupIterations = 2
-    iterations = 3
-    fork = 1
 }

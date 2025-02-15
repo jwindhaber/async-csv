@@ -11,9 +11,9 @@ import java.util.List;
 
 class ZipResult implements LeftoverProvider {
     private final List<List<byte[]>> lines;
-    private final byte[] leftover;
+    private final ByteBuffer leftover;
 
-    public ZipResult(List<List<byte[]>> lines, byte[] leftover) {
+    public ZipResult(List<List<byte[]>> lines, ByteBuffer leftover) {
         this.lines = lines;
         this.leftover = leftover;
     }
@@ -23,7 +23,7 @@ class ZipResult implements LeftoverProvider {
     }
 
     @Override
-    public byte[] getLeftover() {
+    public ByteBuffer getLeftover() {
         return this.leftover;
     }
 
@@ -95,7 +95,7 @@ class ZipResult implements LeftoverProvider {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
-        return new ZipResult(lines, newLeftoverBytes);
+        return new ZipResult(lines, ByteBuffer.wrap(newLeftoverBytes));
 
     }
 

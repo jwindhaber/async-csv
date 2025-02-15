@@ -7,10 +7,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class CsvResult implements LeftoverProvider {
+    public static final byte QUOTE = (byte) '"';
     private final List<List<byte[]>> lines;
-    private final byte[] leftover;
+    private final ByteBuffer leftover;
 
-    public CsvResult(List<List<byte[]>> lines, byte[] leftover) {
+    public CsvResult(List<List<byte[]>> lines, ByteBuffer leftover) {
         this.lines = lines;
         this.leftover = leftover;
     }
@@ -20,94 +21,74 @@ public class CsvResult implements LeftoverProvider {
     }
 
     @Override
-    public byte[] getLeftover() {
+    public ByteBuffer getLeftover() {
         return this.leftover;
     }
 
-    public static CsvResult fromByteBuffer(ByteBuffer buffer, byte delimiter, byte[] leftover) {
+    public static CsvResult fromByteBuffer(ByteBuffer buffer, byte delimiter, ByteBuffer leftover) {
         List<List<byte[]>> lines = new ArrayList<>();
         List<byte[]> currentLine = new ArrayList<>();
         boolean inQuotes = false;
         byte[] newLeftoverBytes = new byte[0];
 
-        try (ByteArrayOutputStream fieldBuffer = new ByteArrayOutputStream()) {
+        int lineStart = 0;
+        ByteBuffer combined = combine(leftover, buffer);
+        int limit = combined.limit();
+        ByteBuffer fieldBuffer = ByteBuffer.allocate(combined.capacity());
 
-            for (byte b : leftover) {
-                if (b == '"') {
-                    inQuotes = !inQuotes;
-                } else if (!inQuotes) {
-                    if (b == delimiter) {
-
-                        currentLine.add(fieldBuffer.toByteArray());
-                        fieldBuffer.reset();
-
-                    } else if (b == '\n' || b == '\r') {
-                        currentLine.add(fieldBuffer.toByteArray());
-                        fieldBuffer.reset();
-                        lines.add(currentLine);
-                        currentLine = new ArrayList<>();
-                    } else {
-                        fieldBuffer.write(b);
-                    }
+        for (int position = 0; position < limit; position++) {
+            byte b = combined.get();
+            if (b == QUOTE) {
+                inQuotes = !inQuotes;
+            } else if (!inQuotes) {
+                if (b == delimiter) {
+                    byte[] field = new byte[fieldBuffer.position()];
+                    fieldBuffer.flip();
+                    fieldBuffer.get(field);
+                    currentLine.add(field);
+                    fieldBuffer.clear();
+                } else if (b == '\n' || b == '\r') {
+                    byte[] field = new byte[fieldBuffer.position()];
+                    fieldBuffer.flip();
+                    fieldBuffer.get(field);
+                    currentLine.add(field);
+                    fieldBuffer.clear();
+                    lines.add(currentLine);
+                    currentLine = new ArrayList<>();
+                    lineStart = position + 1;
                 } else {
-                    fieldBuffer.write(b);
+                    fieldBuffer.put(b);
                 }
+            } else {
+                fieldBuffer.put(b);
             }
-
-            int lineStart = 0;
-
-            byte[] array = buffer.array();
-
-//            while (buffer.hasRemaining()) {
-
-            int position = 0;
-            for (byte b : array) {
-
-//            for (int i = 0; i < array.length; i++) {
-//                byte b = array[i];
-
-//                byte b = buffer.get();
-                if (b == '"') {
-                    inQuotes = !inQuotes;
-                } else if (!inQuotes) {
-                    if (b == delimiter) {
-
-                        currentLine.add(fieldBuffer.toByteArray());
-                        fieldBuffer.reset();
-
-                    } else if (b == '\n' || b == '\r') {
-
-                        currentLine.add(fieldBuffer.toByteArray());
-                        fieldBuffer.reset();
-                        lines.add(currentLine);
-                        currentLine = new ArrayList<>();
-
-                        lineStart = position;
-
-                    } else {
-                        fieldBuffer.write(b);
-                    }
-                }
-                position++;
-            }
+        }
 
 
-            if (lineStart < buffer.position()) {
-                int fieldLength = buffer.position() - lineStart;
-                newLeftoverBytes = new byte[fieldLength];
-                buffer.get(lineStart, newLeftoverBytes, 0, fieldLength);
-            }
+        if (lineStart < combined.position()) {
+            int fieldLength = combined.position() - lineStart;
+            newLeftoverBytes = new byte[fieldLength];
+            combined.get(lineStart, newLeftoverBytes, 0, fieldLength);
+        }
 //            String leftoverString = new String(newLeftoverBytes, StandardCharsets.UTF_8);
 
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return new CsvResult(lines, newLeftoverBytes);
+        return new CsvResult(lines, ByteBuffer.wrap(newLeftoverBytes));
 
     }
 
     @Override
     public String toString() {
         return "CsvResult{lines=" + lines + '}';
+    }
+
+
+    public static ByteBuffer combine(ByteBuffer buffer1, ByteBuffer buffer2) {
+        // Create a new ByteBuffer with a capacity equal to the sum of the two buffers' remaining capacities
+        ByteBuffer combinedBuffer = ByteBuffer.allocate(buffer1.remaining() + buffer2.remaining());
+        combinedBuffer.put(buffer1);
+        combinedBuffer.put(buffer2);
+        combinedBuffer.flip();
+
+        return combinedBuffer;
     }
 }

@@ -17,13 +17,13 @@ public class EnhancedByteBufferProcessor<T extends LeftoverProvider> {
         FALLBACK       // Replace with fallback value
     }
 
-    private final BiFunction<ByteBuffer, byte[], T> transformer;
+    private final BiFunction<ByteBuffer, ByteBuffer, T> transformer;
     private final ErrorHandlingStrategy errorHandlingStrategy;
     private final Supplier<T> fallbackSupplier;  // Used for FALLBACK strategy
     private final byte delimiter;
-    private byte[] leftover = new byte[0];
+    private ByteBuffer leftover = ByteBuffer.allocate(0);;
 
-    public EnhancedByteBufferProcessor(BiFunction<ByteBuffer, byte[], T> transformer,
+    public EnhancedByteBufferProcessor(BiFunction<ByteBuffer, ByteBuffer, T> transformer,
                                        ErrorHandlingStrategy errorHandlingStrategy,
                                        Supplier<T> fallbackSupplier,
                                        byte delimiter) {

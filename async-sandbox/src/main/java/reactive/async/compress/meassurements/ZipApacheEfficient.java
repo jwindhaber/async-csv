@@ -46,7 +46,7 @@ public class ZipApacheEfficient {
         EnhancedByteBufferProcessor<CsvResult> processor = new EnhancedByteBufferProcessor<>(
                 (buffer, leftover) -> CsvResult.fromByteBuffer(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
                 EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
-                () -> new CsvResult(List.of(List.of("Fallback".getBytes())), new byte[0]), // Provide a fallback CsvResult
+                () -> new CsvResult(List.of(List.of("Fallback".getBytes())), ByteBuffer.allocate(0)), // Provide a fallback CsvResult
                 (byte) ',' // CSV delimiter
         );
         CountDownLatch latch = new CountDownLatch(1);

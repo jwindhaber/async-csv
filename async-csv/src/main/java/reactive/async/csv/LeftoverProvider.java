@@ -1,5 +1,7 @@
 package reactive.async.csv;
 
+import java.nio.ByteBuffer;
+
 public interface LeftoverProvider {
-    byte[] getLeftover();
+    ByteBuffer getLeftover();
 }

@@ -28,9 +28,8 @@ public class CsvBenchmark {
 
     @Setup(Level.Invocation) // Use Level.Trial if the data is expensive to create and should persist across iterations
     public void prepare() {
-        inputData = generateInputData();
+        inputData = generateInputDataStitched();
     }
-
 
     @Benchmark
     public void fibClassic(Blackhole bh) {
@@ -38,7 +37,7 @@ public class CsvBenchmark {
         EnhancedByteBufferProcessor<CsvResult> processor = new EnhancedByteBufferProcessor<>(
                 (buffer, leftover) -> CsvResult.fromByteBuffer(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
                 EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
-                () -> new CsvResult(List.of(List.of("Fallback".getBytes())), new byte[0]), // Provide a fallback CsvResult
+                () -> new CsvResult(List.of(List.of("Fallback".getBytes())), ByteBuffer.allocate(0)), // Provide a fallback CsvResult
                 (byte) ','
         );
 
@@ -47,27 +46,32 @@ public class CsvBenchmark {
         Publisher<CsvResult> resultPublisher = processor.process(flux);
         Disposable subscribe = Flux.from(resultPublisher)
                 .flatMap(csvResult -> Flux.fromIterable(csvResult.getLines()))
-                .count()
+//                .map(line -> line.stream()
+//                        .map(String::new)
+//                        .toList())
+//                .count()
                 .subscribe();
 
         bh.consume(subscribe);
     }
 
 
-    private List<ByteBuffer> generateInputData() {
+    private static List<ByteBuffer> generateInputDataStitched() {
         try {
-            Path path = Paths.get("src/jmh/resources/inserts-1_000.csv");
+            Path path = Paths.get("D:\\cesop\\001-testdata\\inserts-1_000.csv");
             byte[] fileBytes = Files.readAllBytes(path);
-            List<ByteBuffer> byteBuffers = new ArrayList<>();
-            int bufferSize = 8196;
+            List<byte[]> byteBuffers = new ArrayList<>();
+            int bufferSize = 8192;
             for (int i = 0; i < fileBytes.length; i += bufferSize) {
                 int end = Math.min(fileBytes.length, i + bufferSize);
-                byteBuffers.add(ByteBuffer.wrap(Arrays.copyOfRange(fileBytes, i, end)));
+                byteBuffers.add(Arrays.copyOfRange(fileBytes, i, end));
             }
             List<ByteBuffer> cumulatedList = new ArrayList<>();
             int n = 1000; // Number of times to add the list
             for (int i = 0; i < n; i++) {
-                cumulatedList.addAll(byteBuffers);
+                byteBuffers.stream()
+                        .map(ByteBuffer::wrap)
+                        .forEach(cumulatedList::add);
             }
             return cumulatedList;
         } catch (IOException e) {
@@ -76,10 +80,5 @@ public class CsvBenchmark {
     }
 
 
-
-//    @Benchmark
-//    public void fibTailRec(Blackhole bh) {
-//        bh.consume(Fib.tailRecFib(30));
-//    }
 
 }

@@ -2,7 +2,9 @@ package reactive.async.csv;
 
 import com.google.common.base.Stopwatch;
 import org.reactivestreams.Publisher;
+import reactive.async.csv.multipass.CsvBufferSplitterResult;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -12,34 +14,54 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 
 public class ReactorExampleFile {
     public static void main(String[] args) throws InterruptedException {
         System.out.println("Starting Reactor Example");
 
-        EnhancedByteBufferProcessor<CsvResult> processor = new EnhancedByteBufferProcessor<>(
-                (buffer, leftover) -> CsvResult.fromByteBuffer(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
+        EnhancedByteBufferProcessor<CsvBufferSplitterResult> processor = new EnhancedByteBufferProcessor<>(
+                (buffer, leftover) -> CsvBufferSplitterResult.splitBufferAtLastNewline(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
                 EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
-                () -> new CsvResult(List.of(List.of("Fallback".getBytes())), ByteBuffer.allocate(0)), // Provide a fallback CsvResult
+                () -> new CsvBufferSplitterResult(ByteBuffer.allocate(0), ByteBuffer.allocate(0)), // Provide a fallback CsvResult
                 (byte) ',' // CSV delimiter
         );
 
+        EnhancedByteBufferProcessor<CsvResult> processor1 = new EnhancedByteBufferProcessor<>(
+                (buffer, leftover) -> CsvResult.fromByteBuffer(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
+                EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
+                () -> new CsvResult(List.of(List.of("Fallback".getBytes())), ByteBuffer.allocate(0)), // Provide a fallback CsvResult
+                (byte) ','
+        );
 
-        String filePath = "D:\\cesop\\001-testdata\\inserts-10_000_000.csv";
+
+//        String filePath = "D:\\cesop\\001-testdata\\inserts-10_000_000.csv";
 //        String filePath = "D:\\cesop\\001-testdata\\inserts-1_000.csv";
 //        Flux<ByteBuffer> byteBufferFlux = readFileToFlux(filePath);
-        List<ByteBuffer> input = generateInputData();
-        Flux<ByteBuffer> byteBufferFlux = Flux.fromIterable(input);
+//        List<ByteBuffer> input = generateInputData();
+        CountDownLatch latch = new CountDownLatch(1);
+        Flux<ByteBuffer> byteBufferFlux = Flux.fromIterable(generateInputDataStitched());
 
         Stopwatch started = Stopwatch.createStarted();
-        Publisher<CsvResult> resultPublisher = processor.process(byteBufferFlux);
-        Flux.from(resultPublisher)
+
+
+        byteBufferFlux
+                .transform(processor::process)
+                .map(CsvBufferSplitterResult::getBuffer)
+                .flatMapSequential(buffer ->
+                        Flux.just(buffer)
+                                .publishOn(Schedulers.boundedElastic())
+                                .transform(processor1::process)
+                )
+//                .transform(processor1::process)
                 .flatMap(csvResult -> Flux.fromIterable(csvResult.getLines()))
-//                 .map(line -> line.stream()
+//                .map(line -> line.stream()
 //                        .map(String::new)
 //                        .toList())
-//                .count()
-                .subscribe();
+                .count()
+                .doOnTerminate(latch::countDown)
+                .subscribe(System.out::println);
+        latch.await();
         started.stop();
         System.out.println(started.toString());
         System.out.println("Ending Reactor Example");
@@ -61,7 +83,7 @@ public class ReactorExampleFile {
                 byteBuffers.add(Arrays.copyOfRange(fileBytes, i, end));
             }
             List<ByteBuffer> cumulatedList = new ArrayList<>();
-            int n = 1000; // Number of times to add the list
+            int n = 10000; // Number of times to add the list
             for (int i = 0; i < n; i++) {
                 byteBuffers.stream()
                         .map(ByteBuffer::wrap)
@@ -73,21 +95,21 @@ public class ReactorExampleFile {
         }
     }
 
-    private static List<ByteBuffer> generateInputData() {
-        try {
-            Path path = Paths.get("D:\\cesop\\001-testdata\\inserts-10_000_000.csv");
-            byte[] fileBytes = Files.readAllBytes(path);
-            List<ByteBuffer> byteBuffers = new ArrayList<>();
-            int bufferSize = DEFAULT_BUFFER_SIZE;
-            for (int i = 0; i < fileBytes.length; i += bufferSize) {
-                int end = Math.min(fileBytes.length, i + bufferSize);
-                byteBuffers.add(ByteBuffer.wrap(Arrays.copyOfRange(fileBytes, i, end)));
-            }
-            return byteBuffers;
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
+//    private static List<ByteBuffer> generateInputData() {
+//        try {
+//            Path path = Paths.get("D:\\cesop\\001-testdata\\inserts-10_000_000.csv");
+//            byte[] fileBytes = Files.readAllBytes(path);
+//            List<ByteBuffer> byteBuffers = new ArrayList<>();
+//            int bufferSize = DEFAULT_BUFFER_SIZE;
+//            for (int i = 0; i < fileBytes.length; i += bufferSize) {
+//                int end = Math.min(fileBytes.length, i + bufferSize);
+//                byteBuffers.add(ByteBuffer.wrap(Arrays.copyOfRange(fileBytes, i, end)));
+//            }
+//            return byteBuffers;
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
+//    }
 
 
 

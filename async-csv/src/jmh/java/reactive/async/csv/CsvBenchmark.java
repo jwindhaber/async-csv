@@ -1,11 +1,14 @@
 package reactive.async.csv;
 
 
+import com.google.common.base.Stopwatch;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 import org.reactivestreams.Publisher;
+import reactive.async.csv.multipass.CsvBufferSplitterResult;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -15,6 +18,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 @BenchmarkMode(Mode.AverageTime)
@@ -32,7 +36,48 @@ public class CsvBenchmark {
     }
 
     @Benchmark
-    public void fibClassic(Blackhole bh) {
+    public void multiPassMultiThread(Blackhole bh) throws InterruptedException {
+
+        EnhancedByteBufferProcessor<CsvBufferSplitterResult> firstPass = new EnhancedByteBufferProcessor<>(
+                (buffer, leftover) -> CsvBufferSplitterResult.splitBufferAtLastNewline(buffer, (byte) ',', leftover),
+                EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
+                () -> new CsvBufferSplitterResult(ByteBuffer.allocate(0), ByteBuffer.allocate(0)),
+                (byte) ','
+        );
+
+        EnhancedByteBufferProcessor<CsvResult> secondPass = new EnhancedByteBufferProcessor<>(
+                (buffer, leftover) -> CsvResult.fromByteBuffer(buffer, (byte) ',', leftover),
+                EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
+                () -> new CsvResult(List.of(List.of("Fallback".getBytes())), ByteBuffer.allocate(0)),
+                (byte) ','
+        );
+
+
+        CountDownLatch latch = new CountDownLatch(1);
+        Flux<ByteBuffer> byteBufferFlux = Flux.fromIterable(generateInputDataStitched());
+
+        Disposable subscribe = byteBufferFlux
+                .transform(firstPass::process)
+                .map(CsvBufferSplitterResult::getBuffer)
+                .flatMapSequential(buffer ->
+                        Flux.just(buffer)
+                                .publishOn(Schedulers.boundedElastic())
+                                .transform(secondPass::process)
+                )
+                .flatMap(csvResult -> Flux.fromIterable(csvResult.getLines()))
+//                .map(line -> line.stream()
+//                        .map(String::new)
+//                        .toList())
+                .count()
+                .doOnTerminate(latch::countDown)
+                .subscribe();
+        latch.await();
+        bh.consume(subscribe);
+    }
+
+
+    //    @Benchmark
+    public void singleThread(Blackhole bh) {
 
         EnhancedByteBufferProcessor<CsvResult> processor = new EnhancedByteBufferProcessor<>(
                 (buffer, leftover) -> CsvResult.fromByteBuffer(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
@@ -70,7 +115,7 @@ public class CsvBenchmark {
             int n = 1000; // Number of times to add the list
             for (int i = 0; i < n; i++) {
                 byteBuffers.stream()
-                        .map(ByteBuffer::wrap)
+                        .map(bytes -> ByteBuffer.wrap(Arrays.copyOf(bytes, bytes.length)))
                         .forEach(cumulatedList::add);
             }
             return cumulatedList;
@@ -78,7 +123,6 @@ public class CsvBenchmark {
             throw new RuntimeException(e);
         }
     }
-
 
 
 }

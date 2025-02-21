@@ -71,6 +71,9 @@ public class CsvResult implements LeftoverProvider {
             combined.get(lineStart, newLeftoverBytes, 0, fieldLength);
         }
 //            String leftoverString = new String(newLeftoverBytes, StandardCharsets.UTF_8);
+        if(newLeftoverBytes.length > 0) {
+            System.out.println("Leftover: " + new String(newLeftoverBytes));
+        }
 
         return new CsvResult(lines, ByteBuffer.wrap(newLeftoverBytes));
 

@@ -25,6 +25,11 @@ public class CsvResult implements LeftoverProvider {
         return this.leftover;
     }
 
+    public static CsvResult fromByteBuffer(ByteBuffer buffer,ByteBuffer leftover){
+        return null;
+    }
+
+
     public static CsvResult fromByteBuffer(ByteBuffer buffer, byte delimiter, ByteBuffer leftover) {
         List<List<byte[]>> lines = new ArrayList<>();
         List<byte[]> currentLine = new ArrayList<>();

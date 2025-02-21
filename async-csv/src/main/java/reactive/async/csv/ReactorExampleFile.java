@@ -1,8 +1,10 @@
 package reactive.async.csv;
 
 import com.google.common.base.Stopwatch;
-import org.reactivestreams.Publisher;
 import reactive.async.csv.multipass.CsvBufferSplitterResult;
+import reactive.async.csv.zerocopy.ByteBufferCsvParser;
+import reactive.async.csv.zerocopy.ZeroCopyByteBufferProcessor;
+import reactive.async.csv.zerocopy.ZeroOverheadResult;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
@@ -35,6 +37,14 @@ public class ReactorExampleFile {
         );
 
 
+        ZeroCopyByteBufferProcessor<ZeroOverheadResult> zeroOverheadProcessor = new ZeroCopyByteBufferProcessor<>(
+                (buffer) -> ByteBufferCsvParser.parseCsv(buffer),
+                ZeroCopyByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
+                () -> new ZeroOverheadResult(ByteBuffer.allocate(0), new ArrayList<>()), // Provide a fallback CsvResult
+                (byte) ','
+        );
+
+
 //        String filePath = "D:\\cesop\\001-testdata\\inserts-10_000_000.csv";
 //        String filePath = "D:\\cesop\\001-testdata\\inserts-1_000.csv";
 //        Flux<ByteBuffer> byteBufferFlux = readFileToFlux(filePath);
@@ -51,7 +61,7 @@ public class ReactorExampleFile {
                 .flatMapSequential(buffer ->
                         Flux.just(buffer)
                                 .publishOn(Schedulers.boundedElastic())
-                                .transform(processor1::process)
+                                .transform(zeroOverheadProcessor::process)
                 )
 //                .transform(processor1::process)
                 .flatMap(csvResult -> Flux.fromIterable(csvResult.getLines()))
@@ -83,7 +93,7 @@ public class ReactorExampleFile {
                 byteBuffers.add(Arrays.copyOfRange(fileBytes, i, end));
             }
             List<ByteBuffer> cumulatedList = new ArrayList<>();
-            int n = 10000; // Number of times to add the list
+            int n = 100000; // Number of times to add the list
             for (int i = 0; i < n; i++) {
                 byteBuffers.stream()
                         .map(ByteBuffer::wrap)

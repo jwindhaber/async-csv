@@ -6,6 +6,9 @@ import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 import org.reactivestreams.Publisher;
 import reactive.async.csv.multipass.CsvBufferSplitterResult;
+import reactive.async.csv.zerocopy.ByteBufferCsvParser;
+import reactive.async.csv.zerocopy.ZeroCopyByteBufferProcessor;
+import reactive.async.csv.zerocopy.ZeroOverheadResult;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
@@ -52,6 +55,13 @@ public class CsvBenchmark {
                 (byte) ','
         );
 
+        ZeroCopyByteBufferProcessor<ZeroOverheadResult> zeroOverheadProcessor = new ZeroCopyByteBufferProcessor<>(
+                (buffer) -> ByteBufferCsvParser.parseCsv(buffer),
+                ZeroCopyByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
+                () -> new ZeroOverheadResult(ByteBuffer.allocate(0), new ArrayList<>()), // Provide a fallback CsvResult
+                (byte) ','
+        );
+
 
         CountDownLatch latch = new CountDownLatch(1);
         Flux<ByteBuffer> byteBufferFlux = Flux.fromIterable(generateInputDataStitched());
@@ -62,7 +72,7 @@ public class CsvBenchmark {
                 .flatMapSequential(buffer ->
                         Flux.just(buffer)
                                 .publishOn(Schedulers.boundedElastic())
-                                .transform(secondPass::process)
+                                .transform(zeroOverheadProcessor::process)
                 )
                 .flatMap(csvResult -> Flux.fromIterable(csvResult.getLines()))
 //                .map(line -> line.stream()

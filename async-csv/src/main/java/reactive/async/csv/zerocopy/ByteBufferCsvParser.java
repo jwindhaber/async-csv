@@ -91,6 +91,8 @@ public class ByteBufferCsvParser  implements LeftoverProvider {
                     fields[fieldCount].start = fieldStart;
                     fields[fieldCount].end = buffer.position() - 1;
                     fieldCount++;
+                } else {
+                    throw new RuntimeException("out of bounds!");
                 }
 
                 if (b == '\n' || b == '\r') {

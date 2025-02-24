@@ -73,7 +73,7 @@ public class CsvResult implements LeftoverProvider {
         if (lineStart < combined.position()) {
             int fieldLength = combined.position() - lineStart;
             newLeftoverBytes = new byte[fieldLength];
-            combined.get(lineStart, newLeftoverBytes, 0, fieldLength);
+//            combined.get(lineStart, newLeftoverBytes, 0, fieldLength);
         }
 //            String leftoverString = new String(newLeftoverBytes, StandardCharsets.UTF_8);
         if(newLeftoverBytes.length > 0) {

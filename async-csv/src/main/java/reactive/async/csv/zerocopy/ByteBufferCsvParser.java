@@ -13,6 +13,8 @@ public class ByteBufferCsvParser  implements LeftoverProvider {
     private final ByteBuffer buffer;
     private final List<int[][]> lines;
 
+    private static final int MAX_FIELDS = 17;
+
     public ByteBufferCsvParser(ByteBuffer buffer, List<int[][]> lines) {
         this.buffer = buffer;
         this.lines = lines;
@@ -26,37 +28,78 @@ public class ByteBufferCsvParser  implements LeftoverProvider {
         return lines;
     }
 
-    public record Row(int start, int end, List<Field> fields){}
-    public record Field(int start, int end){}
+//    public record Row(int start, int end, List<Field> fields){}
+//    public record Field(int start, int end){}
+
+    static public class Field {
+        int start;
+        int end;
+
+        Field(int start, int end) {
+            this.start = start;
+            this.end = end;
+        }
+    }
+
+    static public class Row {
+        int lineStart;
+        int lineEnd;
+        Field[] fields;
+        int fieldCount; // Keeps track of the number of fields added
+
+        Row(int lineStart, int lineEnd, Field[] fields, int fieldCount) {
+            this.lineStart = lineStart;
+            this.lineEnd = lineEnd;
+            this.fields = new Field[fieldCount]; // Copy only the needed fields
+            System.arraycopy(fields, 0, this.fields, 0, fieldCount);
+            this.fieldCount = fieldCount;
+        }
+    }
+
+//    static class ZeroOverheadResult {
+//        ByteBuffer buffer;
+//        List<Row> rows;
+//
+//        ZeroOverheadResult(ByteBuffer buffer, List<Row> rows) {
+//            this.buffer = buffer;
+//            this.rows = rows;
+//        }
+//    }
 
     public static ZeroOverheadResult parseCsv(ByteBuffer buffer) {
-        //we could init with the number of columns from the header
         List<Row> rows = new ArrayList<>();
-        //Lets assume we have
-        List<Field> fields = new ArrayList<>();
+        Field[] fields = new Field[MAX_FIELDS];
 
+
+        for (int i = 0; i < MAX_FIELDS; i++) {
+            fields[i] = new Field(0, 0); // Pre-allocate objects
+        }
+
+        int fieldCount = 0;
         int lineStart = buffer.position();
         int fieldStart = lineStart;
         boolean inQuotes = false;
         int limit = buffer.limit();
+
         for (int position = 0; position < limit; position++) {
-            byte b = buffer.get();
+            byte b = buffer.get(position);
 
             if (b == '"') {
                 inQuotes = !inQuotes;
             } else if (!inQuotes && (b == ',' || b == '\n' || b == '\r')) {
-                Field field = new Field(fieldStart, buffer.position() - 1);
-                fields.add(field); // Store field positions
-//                fields.add(new int[]{fieldStart, buffer.position() - 1}); // Store field positions
+                if (fieldCount < MAX_FIELDS) {
+                    fields[fieldCount].start = fieldStart;
+                    fields[fieldCount].end = buffer.position() - 1;
+                    fieldCount++;
+                }
 
                 if (b == '\n' || b == '\r') {
                     int lineEnd = buffer.position();
-                    if (!fields.isEmpty()) {
-
-                        rows.add(new Row(lineStart, lineEnd, fields));
-//                        rows.add(toArray(fields, lineStart, lineEnd));
-                        fields.clear();
+                    if (fieldCount > 0) {
+                        rows.add(new Row(lineStart, lineEnd, fields, fieldCount));
+                        fieldCount = 0; // Reset for next row
                     }
+
                     if (b == '\r' && buffer.hasRemaining() && buffer.get(buffer.position()) == '\n') {
                         buffer.get(); // Skip \n
                     }
@@ -69,17 +112,16 @@ public class ByteBufferCsvParser  implements LeftoverProvider {
         }
 
         // Handle last line if not terminated with a newline
-        if (fieldStart < buffer.position()) {
-            fields.add(new Field(fieldStart, buffer.position() - 1));
+        if (fieldStart < buffer.position() && fieldCount < MAX_FIELDS) {
+            fields[fieldCount].start = fieldStart;
+            fields[fieldCount].end = buffer.position() - 1;
+            fieldCount++;
         }
-        if (!fields.isEmpty()) {
-            rows.add(new Row(lineStart, buffer.position(), fields));
-//            rows.add(toArray(fields, lineStart, buffer.position()));
+        if (fieldCount > 0) {
+            rows.add(new Row(lineStart, buffer.position(), fields, fieldCount));
         }
 
         return new ZeroOverheadResult(buffer, rows);
-//        return new ByteBufferCsvParser(buffer, rows);
-//        return rows;
     }
 
 //    private static int[][] toArray(List<int[]> fields, int lineStart, int lineEnd) {
@@ -108,7 +150,7 @@ public class ByteBufferCsvParser  implements LeftoverProvider {
         String sampleCsv = "name,age,city\nJohn,30,\"New York\"\nAlice,25,Boston";
         ByteBuffer buffer = ByteBuffer.wrap(sampleCsv.getBytes());
 
-        List<Row> parsedCsv = parseCsv(buffer).getLines();
+//        List<Row> parsedCsv = parseCsv(buffer).getLines();
 
 //        for (Row row : parsedCsv) {
 //            // Extract and print line

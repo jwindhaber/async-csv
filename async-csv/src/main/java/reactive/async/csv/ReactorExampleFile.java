@@ -1,7 +1,7 @@
 package reactive.async.csv;
 
 import com.google.common.base.Stopwatch;
-import reactive.async.csv.multipass.CsvBufferSplitterResult;
+import reactive.async.csv.multipass.CsvByteBufferSplitterResult;
 import reactive.async.csv.zerocopy.ByteBufferCsvParser;
 import reactive.async.csv.zerocopy.ZeroCopyByteBufferProcessor;
 import reactive.async.csv.zerocopy.ZeroOverheadResult;
@@ -22,10 +22,10 @@ public class ReactorExampleFile {
     public static void main(String[] args) throws InterruptedException {
         System.out.println("Starting Reactor Example");
 
-        EnhancedByteBufferProcessor<CsvBufferSplitterResult> processor = new EnhancedByteBufferProcessor<>(
-                (buffer, leftover) -> CsvBufferSplitterResult.splitBufferAtLastNewline(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
+        EnhancedByteBufferProcessor<CsvByteBufferSplitterResult> processor = new EnhancedByteBufferProcessor<>(
+                (buffer, leftover) -> CsvByteBufferSplitterResult.splitBufferAtLastNewline(buffer, (byte) ',', leftover), // Use CsvResult::fromByteBuffer with leftover
                 EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
-                () -> new CsvBufferSplitterResult(ByteBuffer.allocate(0), ByteBuffer.allocate(0)), // Provide a fallback CsvResult
+                () -> new CsvByteBufferSplitterResult(ByteBuffer.allocate(0), ByteBuffer.allocate(0)), // Provide a fallback CsvResult
                 (byte) ',' // CSV delimiter
         );
 
@@ -57,7 +57,7 @@ public class ReactorExampleFile {
 
         byteBufferFlux
                 .transform(processor::process)
-                .map(CsvBufferSplitterResult::getBuffer)
+                .map(CsvByteBufferSplitterResult::getBuffer)
                 .flatMapSequential(buffer ->
                         Flux.just(buffer)
                                 .publishOn(Schedulers.boundedElastic())

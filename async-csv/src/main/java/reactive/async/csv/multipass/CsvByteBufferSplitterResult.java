@@ -6,13 +6,13 @@ import java.nio.ByteBuffer;
 
 import static reactive.async.csv.multipass.IsolatedBatchReorder.combine;
 
-public class CsvBufferSplitterResult implements LeftoverProvider {
+public class CsvByteBufferSplitterResult implements LeftoverProvider {
 
 
     private final ByteBuffer buffer;
     private final ByteBuffer leftover;
 
-    public CsvBufferSplitterResult(ByteBuffer buffer, ByteBuffer leftover) {
+    public CsvByteBufferSplitterResult(ByteBuffer buffer, ByteBuffer leftover) {
         this.buffer = buffer;
         this.leftover = leftover;
     }
@@ -38,7 +38,7 @@ public class CsvBufferSplitterResult implements LeftoverProvider {
 //        }
     }
 
-    public static CsvBufferSplitterResult splitBufferAtLastNewline(ByteBuffer first, byte delimiter1 , ByteBuffer leftover) {
+    public static CsvByteBufferSplitterResult splitBufferAtLastNewline(ByteBuffer first, byte delimiter1 , ByteBuffer leftover) {
 
 
         ByteBuffer buffer = combine(leftover, first);
@@ -75,7 +75,7 @@ public class CsvBufferSplitterResult implements LeftoverProvider {
         }
 
         if (newLinePosition == -1) {
-            return new CsvBufferSplitterResult(ByteBuffer.allocate(0), buffer);
+            return new CsvByteBufferSplitterResult(ByteBuffer.allocate(0), buffer);
         }
 
 //        ByteBuffer restBuffer = ByteBuffer.allocate(newLinePosition + 1);
@@ -99,7 +99,7 @@ public class CsvBufferSplitterResult implements LeftoverProvider {
         buffer.position(0);
         buffer.limit(newLinePosition + 1);
 
-        return new CsvBufferSplitterResult(buffer, partialLineBuffer);
+        return new CsvByteBufferSplitterResult(buffer, partialLineBuffer);
     }
 
     @Override

@@ -1,11 +1,10 @@
 package reactive.async.csv;
 
 
-import com.google.common.base.Stopwatch;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 import org.reactivestreams.Publisher;
-import reactive.async.csv.multipass.CsvBufferSplitterResult;
+import reactive.async.csv.multipass.CsvByteBufferSplitterResult;
 import reactive.async.csv.zerocopy.ByteBufferCsvParser;
 import reactive.async.csv.zerocopy.ZeroCopyByteBufferProcessor;
 import reactive.async.csv.zerocopy.ZeroOverheadResult;
@@ -41,10 +40,10 @@ public class CsvBenchmark {
     @Benchmark
     public void multiPassMultiThread(Blackhole bh) throws InterruptedException {
 
-        EnhancedByteBufferProcessor<CsvBufferSplitterResult> firstPass = new EnhancedByteBufferProcessor<>(
-                (buffer, leftover) -> CsvBufferSplitterResult.splitBufferAtLastNewline(buffer, (byte) ',', leftover),
+        EnhancedByteBufferProcessor<CsvByteBufferSplitterResult> firstPass = new EnhancedByteBufferProcessor<>(
+                (buffer, leftover) -> CsvByteBufferSplitterResult.splitBufferAtLastNewline(buffer, (byte) ',', leftover),
                 EnhancedByteBufferProcessor.ErrorHandlingStrategy.SKIP_ON_ERROR,
-                () -> new CsvBufferSplitterResult(ByteBuffer.allocate(0), ByteBuffer.allocate(0)),
+                () -> new CsvByteBufferSplitterResult(ByteBuffer.allocate(0), ByteBuffer.allocate(0)),
                 (byte) ','
         );
 
@@ -68,7 +67,7 @@ public class CsvBenchmark {
 
         Disposable subscribe = byteBufferFlux
                 .transform(firstPass::process)
-                .map(CsvBufferSplitterResult::getBuffer)
+                .map(CsvByteBufferSplitterResult::getBuffer)
                 .flatMapSequential(buffer ->
                         Flux.just(buffer)
                                 .publishOn(Schedulers.boundedElastic())

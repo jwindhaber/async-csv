@@ -7,7 +7,7 @@ import java.nio.CharBuffer;
 
 import static reactive.async.csv.multipass.IsolatedBatchReorder.combine;
 
-public class CsvByteBufferSplitterResultCharBuffer implements LeftoverProvider {
+public class CsvByteBufferSplitterResultCharBuffer {//implements LeftoverProvider {
 
 
     private final CharBuffer buffer;
@@ -18,7 +18,7 @@ public class CsvByteBufferSplitterResultCharBuffer implements LeftoverProvider {
         this.leftover = leftover;
     }
 
-    public ByteBuffer getBuffer() {
+    public CharBuffer getBuffer() {
         return buffer;
     }
 
@@ -39,7 +39,7 @@ public class CsvByteBufferSplitterResultCharBuffer implements LeftoverProvider {
 //        }
     }
 
-    public static CsvByteBufferSplitterResultCharBuffer splitBufferAtLastNewline(ByteBuffer first, byte delimiter1 , CharBuffer leftover) {
+    public static CsvByteBufferSplitterResultCharBuffer splitBufferAtLastNewline(CharBuffer first, byte delimiter1 , CharBuffer leftover) {
 
 
         CharBuffer buffer = combine(leftover, first);
@@ -52,7 +52,7 @@ public class CsvByteBufferSplitterResultCharBuffer implements LeftoverProvider {
         int newLinePosition = -1;
 
         for (int i = buffer.limit() - 1; i >= 0; i--) {
-            byte b = buffer.get(i);
+            char b = buffer.get(i);
 
             if (b == '\n') {
                 if(!newLineFound){
@@ -63,7 +63,7 @@ public class CsvByteBufferSplitterResultCharBuffer implements LeftoverProvider {
                 if(buffer.limit() <= i + 1){
                     continue;
                 }
-                byte afterDelimiter = buffer.get(i + 1);
+                char afterDelimiter = buffer.get(i + 1);
                 if(afterDelimiter != '"' && newLineFound){
                     break;
                 }
@@ -76,11 +76,11 @@ public class CsvByteBufferSplitterResultCharBuffer implements LeftoverProvider {
         }
 
         if (newLinePosition == -1) {
-            return new CsvByteBufferSplitterResultCharBuffer(ByteBuffer.allocate(0), buffer);
+            return new CsvByteBufferSplitterResultCharBuffer(CharBuffer.allocate(0), buffer);
         }
 
 //        ByteBuffer restBuffer = ByteBuffer.allocate(newLinePosition + 1);
-        ByteBuffer partialLineBuffer = ByteBuffer.allocate(buffer.limit() - newLinePosition - 1);
+        CharBuffer partialLineBuffer = CharBuffer.allocate(buffer.limit() - newLinePosition - 1);
 
 
 
@@ -103,8 +103,8 @@ public class CsvByteBufferSplitterResultCharBuffer implements LeftoverProvider {
         return new CsvByteBufferSplitterResultCharBuffer(buffer, partialLineBuffer);
     }
 
-    @Override
-    public ByteBuffer getLeftover() {
+    //@Override
+    public CharBuffer getLeftover() {
         return leftover;
     }
 }

@@ -112,7 +112,10 @@ public class CsvBenchmark {
 
     private static List<ByteBuffer> generateInputDataStitched() {
         try {
-            Path path = Paths.get("D:\\cesop\\001-testdata\\inserts-1_000.csv");
+           Path path = Paths.get("C:\\repository\\async\\async-csv\\async-csv\\src\\jmh\\resources\\inserts-1_000.csv");
+            // Path path = Paths.get("C:\\repository\\async\\async-csv\\async-csv\\src\\jmh\\resources\\inserts-1_000.csv");
+            // Path path = Paths.get(ClassLoader.getSystemResource("inserts-1_000.csv").toURI());
+           // Path path = Path.of(ClassLoader.getSystemResource("inserts-1_000.csv").toURI());
             byte[] fileBytes = Files.readAllBytes(path);
             List<byte[]> byteBuffers = new ArrayList<>();
             int bufferSize = 8192;
@@ -128,7 +131,7 @@ public class CsvBenchmark {
                         .forEach(cumulatedList::add);
             }
             return cumulatedList;
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }

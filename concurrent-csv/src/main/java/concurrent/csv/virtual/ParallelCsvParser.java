@@ -1,12 +1,12 @@
 package concurrent.csv.virtual;
+
+
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.concurrent.*;
@@ -100,7 +100,13 @@ public class ParallelCsvParser {
 
         for (int i = chunk.position(); i < chunk.limit(); i++) {
             byte b = chunk.get(i);
-            if (b == '"') inQuotes = !inQuotes;
+            if (b == '"') {
+                if (inQuotes && i + 1 < chunk.limit() && chunk.get(i + 1) == '"') {
+                    i++; // escaped quote
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            }
             if (b == '\n' && !inQuotes) {
                 int end = (i > chunk.position() && chunk.get(i - 1) == '\r') ? i - 1 : i;
                 List<ByteSlice> fields = parseCsvLine(chunk, start, end);
@@ -123,7 +129,13 @@ public class ParallelCsvParser {
             boolean atEnd = i == to;
             byte b = atEnd ? (byte) ',' : buffer.get(i);
 
-            if (b == '"') inQuotes = !inQuotes;
+            if (b == '"') {
+                if (inQuotes && i + 1 < buffer.limit() && buffer.get(i + 1) == '"') {
+                    i++; // escaped quote
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            }
             if ((b == ',' && !inQuotes) || atEnd) {
                 int fieldEnd = i;
                 ByteSlice slice = unquote(buffer, start, fieldEnd);
@@ -146,7 +158,13 @@ public class ParallelCsvParser {
         int count = 0;
         for (int i = buffer.position(); i < buffer.limit(); i++) {
             byte b = buffer.get(i);
-            if (b == '"') inQuotes = !inQuotes;
+            if (b == '"') {
+                if (inQuotes && i + 1 < buffer.limit() && buffer.get(i + 1) == '"') {
+                    i++; // escaped quote
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            }
             if (b == '\n' && !inQuotes) count++;
         }
         return count;

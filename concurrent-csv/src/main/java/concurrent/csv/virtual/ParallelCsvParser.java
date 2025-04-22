@@ -183,9 +183,9 @@ public class ParallelCsvParser {
     public static void main(String[] args) throws Exception {
         //Path file = Path.of("large.csv");
         //Path file = Path.of("D:\\cesop\\001-testdata\\inserts-1_000.csv");
-        //Path file = Path.of(ClassLoader.getSystemResource("inserts-1_000.csv").toURI());
+        Path file = Path.of(ClassLoader.getSystemResource("inserts-1_000.csv").toURI());
 
-        Path file = setup();
+        //Path file = setup();
         parseCsvFile(file, 64 * 1024, Runtime.getRuntime().availableProcessors(), (fields, line) -> {
             System.out.printf("Line %d: %s%n", line, fields.get(0).asString()); // example
         });

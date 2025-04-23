@@ -178,63 +178,58 @@ public class ChunkedFileProcessor {
 
         CharBuffer charBuffer;
         try {
-            charBuffer = StandardCharsets.UTF_8.newDecoder().decode(buffer);
+            CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+            charBuffer = decoder.decode(buffer);
         } catch (CharacterCodingException e) {
             throw new NonFatalProcessingException("Decoding failed", e);
         }
         buffer.reset();
 
-        List<List<String>> records = new ArrayList<>();
-        List<String> currentRecord = new ArrayList<>();
-        StringBuilder currentField = new StringBuilder();
+        List<Row> rows = new ArrayList<>();
+        //Field[] fields = new Field[128];
+        Field[] fields = new Field[18];
+        int fieldCount = 0;
+        int lineStart = 0;
+        int fieldStart = 0;
         boolean inQuotes = false;
-        boolean wasQuoted = false;
 
         for (int i = 0; i < charBuffer.length(); i++) {
             char c = charBuffer.get(i);
-
             if (inQuotes) {
                 if (c == '"') {
                     if (i + 1 < charBuffer.length() && charBuffer.get(i + 1) == '"') {
-                        currentField.append('"');
-                        i++; // skip the escaped quote
+                        i++;
                     } else {
                         inQuotes = false;
-                        wasQuoted = true;
                     }
-                } else {
-                    currentField.append(c);
                 }
             } else {
                 if (c == '"') {
                     inQuotes = true;
                 } else if (c == ',') {
-                    currentRecord.add(currentField.toString());
-                    currentField.setLength(0);
-                    wasQuoted = false;
+                    fields[fieldCount++] = new Field(fieldStart, i);
+                    fieldStart = i + 1;
                 } else if (c == '\n' || c == '\r') {
                     if (c == '\r' && i + 1 < charBuffer.length() && charBuffer.get(i + 1) == '\n') {
-                        i++; // skip LF after CR
+                        i++;
                     }
-                    currentRecord.add(currentField.toString());
-                    currentField.setLength(0);
-                    records.add(currentRecord);
-                    currentRecord = new ArrayList<>();
-                    wasQuoted = false;
-                } else {
-                    currentField.append(c);
+                    fields[fieldCount++] = new Field(fieldStart, i);
+                    rows.add(new Row(lineStart, i, fields, fieldCount));
+                    fieldStart = i + 1;
+                    lineStart = i + 1;
+                    fieldCount = 0;
                 }
             }
         }
 
-        if (currentField.length() > 0 || wasQuoted) {
-            currentRecord.add(currentField.toString());
+        if (fieldStart < charBuffer.length()) {
+            fields[fieldCount++] = new Field(fieldStart, charBuffer.length());
         }
-        if (!currentRecord.isEmpty()) {
-            records.add(currentRecord);
+        if (fieldCount > 0) {
+            rows.add(new Row(lineStart, charBuffer.length(), fields, fieldCount));
         }
 
-        return new ChunkResult(records, Optional.empty());
+        return new ChunkResult(rows, Optional.empty());
     }
 
     private void handleResult(ChunkResult result) {
@@ -245,7 +240,7 @@ public class ChunkedFileProcessor {
 
 
     private record Chunk(ByteBuffer buffer) {}
-    public record ChunkResult(List<List<String>> buffer, Optional<Exception> error) {}
+    public record ChunkResult(List<Row> rows, Optional<Exception> error) {}
 
     public static class NonFatalProcessingException extends Exception {
         public NonFatalProcessingException(String message) {
@@ -261,15 +256,40 @@ public class ChunkedFileProcessor {
         void accept(ChunkResult result);
     }
 
+    public static class Field {
+        final int start;
+        final int end;
+
+        public Field(int start, int end) {
+            this.start = start;
+            this.end = end;
+        }
+    }
+
+    public static class Row {
+        int lineStart;
+        int lineEnd;
+        Field[] fields;
+        int fieldCount;
+
+        Row(int lineStart, int lineEnd, Field[] fields, int fieldCount) {
+            this.lineStart = lineStart;
+            this.lineEnd = lineEnd;
+            this.fields = new Field[fieldCount];
+            System.arraycopy(fields, 0, this.fields, 0, fieldCount);
+            this.fieldCount = fieldCount;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         //Path file = Path.of(ClassLoader.getSystemResource("inserts-1_000.csv").toURI());
-        Path file = Path.of("C:\\repository\\async\\async-csv\\concurrent-csv\\build\\tmp\\jmh\\benchmark-12657088394399817139.csv");
+        Path file = Path.of("C:\\repository\\async\\async-csv\\concurrent-csv\\build\\tmp\\jmh\\benchmark-13358140943350218058.csv");
         //ChunkedFileProcessor processor = new ChunkedFileProcessor(file, 64 * 1024 * 1024, 16);
         AtomicInteger recordsProcessed = new AtomicInteger();
         ChunkedFileProcessor processor = new ChunkedFileProcessor(file, 64 * 1024, 16,(result -> {
             // Process the result
             //System.out.println("Processed chunk with " + result.buffer.size() + " records.");
-            recordsProcessed.addAndGet(result.buffer.size());
+            recordsProcessed.addAndGet(result.rows.size());
             result.error.ifPresent(err -> {
                 System.err.println("Error processing chunk: " + err.getMessage());
             });

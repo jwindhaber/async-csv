@@ -1,9 +1,15 @@
 package concurrent.csv.queue;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +25,7 @@ public class ChunkedFileProcessor {
     private final ExecutorService writerExecutor;
     private final AtomicBoolean shutdown = new AtomicBoolean(false);
     private final Future<ChunkResult> poisonPill = CompletableFuture.completedFuture(null);
+    private final CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
 
     public ChunkedFileProcessor(Path filePath, int chunkSize, int queueCapacity) {
         this.filePath = filePath;
@@ -98,12 +105,71 @@ public class ChunkedFileProcessor {
     }
 
     private ChunkResult process(Chunk chunk) throws NonFatalProcessingException {
-        // TODO: actual processing logic
+        ByteBuffer buffer = chunk.buffer();
+        buffer.mark();
+
+        CharBuffer charBuffer;
+        try {
+            charBuffer = decoder.decode(buffer);
+        } catch (CharacterCodingException e) {
+            throw new NonFatalProcessingException("Decoding failed", e);
+        }
+        buffer.reset();
+
+        List<List<String>> records = new ArrayList<>();
+        List<String> currentRecord = new ArrayList<>();
+        StringBuilder currentField = new StringBuilder();
+        boolean inQuotes = false;
+        boolean wasQuoted = false;
+
+        for (int i = 0; i < charBuffer.length(); i++) {
+            char c = charBuffer.get(i);
+
+            if (inQuotes) {
+                if (c == '"') {
+                    if (i + 1 < charBuffer.length() && charBuffer.get(i + 1) == '"') {
+                        currentField.append('"');
+                        i++; // skip the escaped quote
+                    } else {
+                        inQuotes = false;
+                        wasQuoted = true;
+                    }
+                } else {
+                    currentField.append(c);
+                }
+            } else {
+                if (c == '"') {
+                    inQuotes = true;
+                } else if (c == ',') {
+                    currentRecord.add(currentField.toString());
+                    currentField.setLength(0);
+                    wasQuoted = false;
+                } else if (c == '\n' || c == '\r') {
+                    if (c == '\r' && i + 1 < charBuffer.length() && charBuffer.get(i + 1) == '\n') {
+                        i++; // skip LF after CR
+                    }
+                    currentRecord.add(currentField.toString());
+                    currentField.setLength(0);
+                    records.add(currentRecord);
+                    currentRecord = new ArrayList<>();
+                    wasQuoted = false;
+                } else {
+                    currentField.append(c);
+                }
+            }
+        }
+
+        if (currentField.length() > 0 || wasQuoted) {
+            currentRecord.add(currentField.toString());
+        }
+        if (!currentRecord.isEmpty()) {
+            records.add(currentRecord);
+        }
+
         return new ChunkResult(chunk.buffer(), Optional.empty());
     }
 
     private void handleResult(ChunkResult result) {
-        // TODO: handle the result downstream, e.g., emit to another system
         result.error().ifPresent(err -> {
             System.err.println("Non-fatal error in chunk: " + err.getMessage());
         });

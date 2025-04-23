@@ -1,5 +1,4 @@
 package concurrent.csv.queue;
-
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
@@ -19,6 +18,7 @@ public class ChunkedFileProcessor {
     private final ExecutorService readerExecutor;
     private final ExecutorService writerExecutor;
     private final AtomicBoolean shutdown = new AtomicBoolean(false);
+    private final Future<ChunkResult> poisonPill = CompletableFuture.completedFuture(null);
 
     public ChunkedFileProcessor(Path filePath, int chunkSize, int queueCapacity) {
         this.filePath = filePath;
@@ -63,14 +63,20 @@ public class ChunkedFileProcessor {
                 } catch (IOException | InterruptedException e) {
                     shutdown.set(true);
                     e.printStackTrace();
+                } finally {
+                    try {
+                        futureQueue.put(poisonPill);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
             });
 
             writerExecutor.submit(() -> {
                 try {
-                    while (!shutdown.get() || !futureQueue.isEmpty()) {
-                        Future<ChunkResult> future = futureQueue.poll(100, TimeUnit.MILLISECONDS);
-                        if (future == null) continue;
+                    while (!shutdown.get()) {
+                        Future<ChunkResult> future = futureQueue.take();
+                        if (future == poisonPill) break;
 
                         ChunkResult result = future.get();
                         handleResult(result);

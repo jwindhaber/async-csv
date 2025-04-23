@@ -1,4 +1,7 @@
 package concurrent.csv.queue;
+
+import com.google.common.base.Stopwatch;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -13,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ChunkedFileProcessor {
 
@@ -25,13 +29,15 @@ public class ChunkedFileProcessor {
     private final ExecutorService writerExecutor;
     private final AtomicBoolean shutdown = new AtomicBoolean(false);
     private final Future<ChunkResult> poisonPill = CompletableFuture.completedFuture(null);
-    private final CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+    //private final CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder();
+    private final CsvLineConsumer consumer;
 
-    public ChunkedFileProcessor(Path filePath, int chunkSize, int queueCapacity) {
+    public ChunkedFileProcessor(Path filePath, int chunkSize, int queueCapacity, CsvLineConsumer consumer) {
         this.filePath = filePath;
         this.chunkSize = chunkSize;
         this.queueCapacity = queueCapacity;
         this.futureQueue = new ArrayBlockingQueue<>(queueCapacity);
+        this.consumer = consumer;
         this.processorExecutor = Executors.newVirtualThreadPerTaskExecutor();
         this.readerExecutor = Executors.newVirtualThreadPerTaskExecutor();
         this.writerExecutor = Executors.newVirtualThreadPerTaskExecutor();
@@ -43,32 +49,73 @@ public class ChunkedFileProcessor {
 
             readerExecutor.submit(() -> {
                 long position = 0;
+                ByteBuffer leftover = ByteBuffer.allocate(0);
+
                 try {
                     while (position < fileSize && !shutdown.get()) {
-                        long remaining = fileSize - position;
-                        int size = (int) Math.min(chunkSize, remaining);
-                        ByteBuffer buffer = ByteBuffer.allocate(size);
-                        int read = channel.read(buffer, position);
-                        if (read == -1) break;
+                        int readSize = (int) Math.min(chunkSize, fileSize - position);
+                        int leftoverSize = leftover.remaining();
+                        ByteBuffer buffer = ByteBuffer.allocate(leftoverSize + readSize);
+
+                        //String decod = decoder.decode(leftover.duplicate()).toString();
+                        //leftover.flip();
+                        buffer.put(leftover);
+
+                        //String decode = decoder.decode(leftover.duplicate()).toString();
+
+
+                        // Read directly into buffer after leftover
+                        int bytesRead = channel.read(buffer, position);
                         buffer.flip();
 
-                        Chunk chunk = new Chunk(buffer);
+                        //String decode1 = decoder.decode(buffer.duplicate()).toString();
+
+                        int lastCsvBoundary = findLastCompleteCsvRecord(buffer);
+                        if (lastCsvBoundary == -1) {
+                            leftover = buffer;
+                            position += readSize;
+                            continue;
+                        }
+
+                        ByteBuffer toProcess = buffer.slice(0, lastCsvBoundary);
+                        leftover = buffer.slice(lastCsvBoundary, buffer.limit() - lastCsvBoundary);
+
+                        final ByteBuffer chunkCopy = toProcess.asReadOnlyBuffer();
+
+
+                        Chunk chunk = new Chunk(chunkCopy);
                         Future<ChunkResult> future = processorExecutor.submit(() -> {
                             try {
                                 return process(chunk);
                             } catch (NonFatalProcessingException e) {
-                                return new ChunkResult(chunk.buffer(), Optional.of(e));
+                                return new ChunkResult(null, Optional.of(e));
                             } catch (Exception fatal) {
-                                shutdown.set(true);
+                                shutdownAll();
                                 throw fatal;
                             }
                         });
                         futureQueue.put(future);
 
-                        position += read;
+                        position += readSize;
                     }
+
+                    if (leftover.hasRemaining() && !shutdown.get()) {
+                        Chunk chunk = new Chunk(leftover);
+                        Future<ChunkResult> future = processorExecutor.submit(() -> {
+                            try {
+                                return process(chunk);
+                            } catch (NonFatalProcessingException e) {
+                                return new ChunkResult(null, Optional.of(e));
+                            } catch (Exception fatal) {
+                                shutdownAll();
+                                throw fatal;
+                            }
+                        });
+                        futureQueue.put(future);
+                    }
+
                 } catch (IOException | InterruptedException e) {
-                    shutdown.set(true);
+                    shutdownAll();
                     e.printStackTrace();
                 } finally {
                     try {
@@ -89,7 +136,7 @@ public class ChunkedFileProcessor {
                         handleResult(result);
                     }
                 } catch (InterruptedException | ExecutionException e) {
-                    shutdown.set(true);
+                    shutdownAll();
                     e.printStackTrace();
                 }
             });
@@ -104,13 +151,34 @@ public class ChunkedFileProcessor {
         }
     }
 
+    private void shutdownAll() {
+        System.out.println("Shutting down all executors...");
+        if (shutdown.compareAndSet(false, true)) {
+            processorExecutor.shutdownNow();
+            readerExecutor.shutdownNow();
+            writerExecutor.shutdownNow();
+            futureQueue.clear();
+            futureQueue.offer(poisonPill);
+        }
+    }
+
+    public static int findLastCompleteCsvRecord(ByteBuffer buffer) {
+        boolean inQuotes = false;
+        for (int i = buffer.limit() - 1; i >= buffer.position(); i--) {
+            byte b = buffer.get(i);
+            if (b == '"') inQuotes = !inQuotes;
+            if (b == '\n' && !inQuotes) return i + 1;
+        }
+        return -1;
+    }
+
     private ChunkResult process(Chunk chunk) throws NonFatalProcessingException {
         ByteBuffer buffer = chunk.buffer();
         buffer.mark();
 
         CharBuffer charBuffer;
         try {
-            charBuffer = decoder.decode(buffer);
+            charBuffer = StandardCharsets.UTF_8.newDecoder().decode(buffer);
         } catch (CharacterCodingException e) {
             throw new NonFatalProcessingException("Decoding failed", e);
         }
@@ -166,21 +234,18 @@ public class ChunkedFileProcessor {
             records.add(currentRecord);
         }
 
-        return new ChunkResult(chunk.buffer(), Optional.empty());
+        return new ChunkResult(records, Optional.empty());
     }
 
     private void handleResult(ChunkResult result) {
-        result.error().ifPresent(err -> {
-            System.err.println("Non-fatal error in chunk: " + err.getMessage());
-        });
+
+        consumer.accept(result);
+
     }
 
-    public void shutdown() {
-        shutdown.set(true);
-    }
 
     private record Chunk(ByteBuffer buffer) {}
-    private record ChunkResult(ByteBuffer buffer, Optional<Exception> error) {}
+    public record ChunkResult(List<List<String>> buffer, Optional<Exception> error) {}
 
     public static class NonFatalProcessingException extends Exception {
         public NonFatalProcessingException(String message) {
@@ -192,9 +257,28 @@ public class ChunkedFileProcessor {
         }
     }
 
+    public interface CsvLineConsumer {
+        void accept(ChunkResult result);
+    }
+
     public static void main(String[] args) throws Exception {
-        Path file = Path.of("/path/to/your/largefile.dat");
-        ChunkedFileProcessor processor = new ChunkedFileProcessor(file, 64 * 1024 * 1024, 16);
+        //Path file = Path.of(ClassLoader.getSystemResource("inserts-1_000.csv").toURI());
+        Path file = Path.of("C:\\repository\\async\\async-csv\\concurrent-csv\\build\\tmp\\jmh\\benchmark-12657088394399817139.csv");
+        //ChunkedFileProcessor processor = new ChunkedFileProcessor(file, 64 * 1024 * 1024, 16);
+        AtomicInteger recordsProcessed = new AtomicInteger();
+        ChunkedFileProcessor processor = new ChunkedFileProcessor(file, 64 * 1024, 16,(result -> {
+            // Process the result
+            //System.out.println("Processed chunk with " + result.buffer.size() + " records.");
+            recordsProcessed.addAndGet(result.buffer.size());
+            result.error.ifPresent(err -> {
+                System.err.println("Error processing chunk: " + err.getMessage());
+            });
+        }));
+        Stopwatch stopwatch = Stopwatch.createStarted();
         processor.run();
+        stopwatch.stop();
+        System.out.println("Processing completed.");
+        System.out.println("Processed with " + recordsProcessed.get() + " records.");
+        System.out.println("Processing took: " + stopwatch.elapsed(TimeUnit.MILLISECONDS) + " ms");
     }
 }

@@ -1,11 +1,14 @@
 package reactive.async.csv;
 
+import concurrent.csv.queue.ChunkedFileProcessor;
 import concurrent.csv.virtual.ParallelCsvParser;
 import org.openjdk.jmh.annotations.*;
 import org.openjdk.jmh.infra.Blackhole;
 
-import java.io.*;
-import java.nio.file.*;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -13,10 +16,7 @@ import java.util.concurrent.TimeUnit;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.SECONDS)
 @State(Scope.Thread)
-public class CsvParserBenchmark {
-
-    @Param({"104857600"}) // 100 MB file
-    private int fileSizeBytes;
+public class ChunkedFileProcessorBenchmark {
 
     private Path tempFile;
 
@@ -40,13 +40,8 @@ public class CsvParserBenchmark {
 
     @Benchmark
     public void benchmarkCsvParsing(Blackhole bh) throws Exception {
-        ParallelCsvParser.parseCsvFile(tempFile, 64 * 1024, Runtime.getRuntime().availableProcessors(), new ParallelCsvParser.CsvLineConsumer() {
-            @Override
-            public void accept(List<ParallelCsvParser.ByteSlice> fields, long lineNumber) {
-                // no-op to avoid I/O during benchmark
-                bh.consume(fields);
-            }
-        });
+        ChunkedFileProcessor processor = new ChunkedFileProcessor(tempFile, 64 * 1024, 16, (result) -> bh.consume(result));
+        processor.run();
     }
 
     @TearDown(Level.Trial)

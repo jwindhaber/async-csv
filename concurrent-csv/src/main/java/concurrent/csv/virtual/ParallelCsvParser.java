@@ -1,35 +1,34 @@
 package concurrent.csv.virtual;
 
-
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.CharsetDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.*;
 
 public class ParallelCsvParser {
 
-    public record ByteSlice(ByteBuffer buffer, int start, int end) {
-        public byte[] copy() {
-            byte[] bytes = new byte[end - start];
-            int originalPos = buffer.position();
-            buffer.position(start);
-            buffer.get(bytes, 0, end - start);
-            buffer.position(originalPos);
-            return bytes;
-        }
-
+    public record CharSlice(CharBuffer buffer, int start, int end) {
         public String asString() {
-            return new String(copy());
+            CharSequence cs = buffer.subSequence(start, end);
+            return cs.toString();
         }
     }
 
     public interface CsvLineConsumer {
-        void accept(List<ByteSlice> fields, long lineNumber);
+        void accept(CharSlice[] fields, int fieldStart, int fieldCount, long lineNumber);
     }
 
     public static void parseCsvFile(
@@ -56,7 +55,6 @@ public class ParallelCsvParser {
             leftover.flip();
             buffer.put(leftover);
 
-            // Read directly into buffer after leftover
             int bytesRead = channel.read(buffer, position);
             buffer.flip();
 
@@ -94,63 +92,75 @@ public class ParallelCsvParser {
     }
 
     private static void processChunk(ByteBuffer chunk, long startLineNumber, CsvLineConsumer consumer) {
-        int start = chunk.position();
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPLACE)
+                .onUnmappableCharacter(CodingErrorAction.REPLACE);
+
+        CharBuffer charBuffer;
+        try {
+            charBuffer = decoder.decode(chunk);
+        } catch (CharacterCodingException e) {
+            throw new RuntimeException("Failed to decode chunk", e);
+        }
+
+        int start = charBuffer.position();
         boolean inQuotes = false;
         long line = startLineNumber;
+        CharSlice[] fields = new CharSlice[128];
+        int fieldCount = 0;
 
-        for (int i = chunk.position(); i < chunk.limit(); i++) {
-            byte b = chunk.get(i);
-            if (b == '"') {
-                if (inQuotes && i + 1 < chunk.limit() && chunk.get(i + 1) == '"') {
-                    i++; // escaped quote
+        for (int i = charBuffer.position(); i < charBuffer.limit(); i++) {
+            char c = charBuffer.get(i);
+            if (c == '"') {
+                if (inQuotes && i + 1 < charBuffer.limit() && charBuffer.get(i + 1) == '"') {
+                    i++;
                 } else {
                     inQuotes = !inQuotes;
                 }
             }
-            if (b == '\n' && !inQuotes) {
-                int end = (i > chunk.position() && chunk.get(i - 1) == '\r') ? i - 1 : i;
-                List<ByteSlice> fields = parseCsvLine(chunk, start, end);
-                consumer.accept(fields, line++);
+            if (c == '\n' && !inQuotes) {
+                int end = (i > charBuffer.position() && charBuffer.get(i - 1) == '\r') ? i - 1 : i;
+                fieldCount = parseCsvLine(charBuffer, start, end, fields);
+                consumer.accept(fields, 0, fieldCount, line++);
                 start = i + 1;
             }
         }
-        if (start < chunk.limit()) {
-            List<ByteSlice> fields = parseCsvLine(chunk, start, chunk.limit());
-            consumer.accept(fields, line);
+        if (start < charBuffer.limit()) {
+            fieldCount = parseCsvLine(charBuffer, start, charBuffer.limit(), fields);
+            consumer.accept(fields, 0, fieldCount, line);
         }
     }
 
-    private static List<ByteSlice> parseCsvLine(ByteBuffer buffer, int from, int to) {
-        List<ByteSlice> fields = new ArrayList<>();
+    private static int parseCsvLine(CharBuffer buffer, int from, int to, CharSlice[] fields) {
         int start = from;
         boolean inQuotes = false;
+        int fieldIndex = 0;
 
         for (int i = from; i <= to; i++) {
             boolean atEnd = i == to;
-            byte b = atEnd ? (byte) ',' : buffer.get(i);
+            char c = atEnd ? ',' : buffer.get(i);
 
-            if (b == '"') {
+            if (c == '"') {
                 if (inQuotes && i + 1 < buffer.limit() && buffer.get(i + 1) == '"') {
-                    i++; // escaped quote
+                    i++;
                 } else {
                     inQuotes = !inQuotes;
                 }
             }
-            if ((b == ',' && !inQuotes) || atEnd) {
+            if ((c == ',' && !inQuotes) || atEnd) {
                 int fieldEnd = i;
-                ByteSlice slice = unquote(buffer, start, fieldEnd);
-                fields.add(slice);
+                fields[fieldIndex++] = unquote(buffer, start, fieldEnd);
                 start = i + 1;
             }
         }
-        return fields;
+        return fieldIndex;
     }
 
-    private static ByteSlice unquote(ByteBuffer buffer, int start, int end) {
+    private static CharSlice unquote(CharBuffer buffer, int start, int end) {
         if (end - start >= 2 && buffer.get(start) == '"' && buffer.get(end - 1) == '"') {
-            return new ByteSlice(buffer, start + 1, end - 1);
+            return new CharSlice(buffer, start + 1, end - 1);
         }
-        return new ByteSlice(buffer, start, end);
+        return new CharSlice(buffer, start, end);
     }
 
     private static int countCsvLines(ByteBuffer buffer) {
@@ -160,7 +170,7 @@ public class ParallelCsvParser {
             byte b = buffer.get(i);
             if (b == '"') {
                 if (inQuotes && i + 1 < buffer.limit() && buffer.get(i + 1) == '"') {
-                    i++; // escaped quote
+                    i++;
                 } else {
                     inQuotes = !inQuotes;
                 }
@@ -181,31 +191,10 @@ public class ParallelCsvParser {
     }
 
     public static void main(String[] args) throws Exception {
-        //Path file = Path.of("large.csv");
-        //Path file = Path.of("D:\\cesop\\001-testdata\\inserts-1_000.csv");
         Path file = Path.of(ClassLoader.getSystemResource("inserts-1_000.csv").toURI());
 
-        //Path file = setup();
-        parseCsvFile(file, 64 * 1024, Runtime.getRuntime().availableProcessors(), (fields, line) -> {
-            System.out.printf("Line %d: %s%n", line, fields.get(0).asString()); // example
+        parseCsvFile(file, 64 * 1024, Runtime.getRuntime().availableProcessors(), (fields, startIdx, count, line) -> {
+            System.out.printf("Line %d: %s%n", line, fields[startIdx].asString());
         });
-    }
-
-    public static Path setup() throws IOException {
-        Path tempFile = Files.createTempFile("benchmark-", ".csv");
-        System.out.println("Temp file created: " + tempFile.toAbsolutePath());
-
-        try (BufferedWriter writer = Files.newBufferedWriter(tempFile)) {
-            // Write a large CSV file with 1 million lines
-            int lines = 1_000_000;
-
-            for (int i = 0; i < lines; i++) {
-                //writer.write("field1,field2,\"quoted\nfield3\",field4\r\n");
-                writer.write("CY-1-2,true,CZ-1,2025-01-27T22:45:11Z,CESOP701,CESOP701,1113441.00,EUR,Bank transfer,TODO,true,DE,OBAN,Four party card scheme,other,c22a7a57-344a-4985-b99f-0421dd80ccbb\n");
-            }
-        }
-        return tempFile;
-
-
     }
 }

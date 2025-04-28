@@ -1,0 +1,66 @@
+openapi: 3.0.0
+info:
+  title: Transaction Data Schema
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    Transaction:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+          index: 0
+        is_refund:
+          type: boolean
+          index: 1
+        corr_transaction_identifier:
+          type: string
+          index: 2
+        date_time:
+          type: string
+          format: date-time
+          index: 3
+        transaction_date_type:
+          type: string
+          index: 4
+        transaction_date_other:
+          type: string
+          index: 5
+        amount:
+          type: number
+          format: decimal
+          index: 6
+        currency:
+          type: string
+          maxLength: 3
+          pattern: "^[A-Z]{3}$"
+          index: 7
+        payment_method_type:
+          type: string
+          enum:
+            - Card payment
+            - Bank transfer
+            - Direct debit
+          index: 8
+        payment_method_other:
+          type: string
+          index: 9
+        initiated_at_physical_premises_of_merchant:
+          type: boolean
+          index: 10
+        payer_ms:
+          type: string
+          index: 11
+        payer_ms_source:
+          type: string
+          index: 12
+        psp_role_type:
+          type: string
+          index: 13
+        psp_role_other:
+          type: string
+          index: 14
+        reported_payee_id:
+          type: string
+          index: 15

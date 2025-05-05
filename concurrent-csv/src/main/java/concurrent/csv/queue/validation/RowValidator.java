@@ -6,14 +6,27 @@ import concurrent.csv.queue.validation.schema.Property;
 
 import java.math.BigDecimal;
 import java.nio.CharBuffer;
+import java.text.ParsePosition;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class RowValidator {
+
+    private static final Pattern FLEXIBLE_ISO_DATETIME_PATTERN = Pattern.compile(
+            "^\\d{4}-\\d{2}-\\d{2}T" +                   // Date: YYYY-MM-DDT
+                    "\\d{2}:\\d{2}:\\d{2}" +                     // Time: HH:mm:ss
+                    "(\\.\\d{1,9})?" +                           // Optional .fractional seconds
+                    "(Z|[+-]\\d{2}:\\d{2})?$"                    // Optional zone offset
+    );
+
+    private static final Map<String, Pattern> PRECOMPILED_PATTERNS = new HashMap<>();
+
+
     private final Map<Integer, Property> propertyByIndex;
 
     // Assuming the OpenApiSpec object is passed in for schema validation
@@ -48,12 +61,15 @@ public class RowValidator {
 
             // Perform validation on each property
             if (!validateField(value, property)) {
+
                 errors.add("Invalid value for field at index " + i + ": " + value);
+                System.out.println("Invalid value for field at index " + i + ": " + value);
             }
         }
 
         return new ValidationResult(errors);
     }
+
 
     private boolean validateField(CharSequence value, Property property) {
         // Validate based on the type
@@ -61,8 +77,11 @@ public class RowValidator {
             if (property.getMaxLength() != null && value.length() > property.getMaxLength()) {
                 return false;
             }
-            if (property.getPattern() != null && !value.toString().matches(property.getPattern())) {
-                return false;
+            if (property.getPattern() != null) {
+                Pattern pattern = PRECOMPILED_PATTERNS.computeIfAbsent(property.getPattern(), Pattern::compile);
+                if (!pattern.matcher(value).matches()) {
+                    return false;
+                }
             }
         } else if (property.getType().equals("boolean")) {
             if (!"true".equalsIgnoreCase(value.toString()) && !"false".equalsIgnoreCase(value.toString())) {
@@ -78,12 +97,23 @@ public class RowValidator {
 //        else if (property.getEnum() != null && !property.getEnum().contains(value.toString())) {
 //            return false;
 //        }
-        else if (property.getFormat() != null && property.getFormat().equals("date-time")) {
-            try {
-                DateTimeFormatter.ISO_DATE_TIME.parse(value);
-            } catch (DateTimeParseException e) {
-                return false;
-            }
+        if (property.getFormat() != null && property.getFormat().equals("date-time")) {
+
+
+            return FLEXIBLE_ISO_DATETIME_PATTERN.matcher(value).matches();
+
+//             try {
+////                DateTimeFormatter.ISO_DATE_TIME.parse(value);
+//
+//
+//                DateTimeFormatter.ISO_DATE_TIME.parseUnresolved(value, new ParsePosition(0));
+//
+//                ISO_LOCAL_DATETIME_PATTERN
+//
+//
+//            } catch (DateTimeParseException e) {
+//                return false;
+//            }
         }
 
         return true;

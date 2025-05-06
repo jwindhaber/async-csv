@@ -24,6 +24,8 @@ dependencies {
 
 
     implementation("org.yaml:snakeyaml:2.4")
+    implementation("software.amazon.awssdk:s3:2.31.35")
+    implementation("org.reactivestreams:reactive-streams-flow-adapters:1.0.4")
 
     //implementation()
     // Add Project Reactor dependency

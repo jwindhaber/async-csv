@@ -295,6 +295,9 @@ public class ChunkedFileProcessor {
             return fields;
         }
 
+        public int getFieldCount() {
+            return fieldCount;
+        }
      }
 
     public static void main(String[] args) throws Exception {

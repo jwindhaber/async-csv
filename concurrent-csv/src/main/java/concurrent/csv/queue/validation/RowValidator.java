@@ -83,6 +83,9 @@ public class RowValidator {
                     return false;
                 }
             }
+            if (property.getEnum() != null && !property.getEnum().isEmpty() && !property.getEnum().contains(value.toString())) {
+                return false;
+            }
         } else if (property.getType().equals("boolean")) {
             if (!"true".equalsIgnoreCase(value.toString()) && !"false".equalsIgnoreCase(value.toString())) {
                 return false;
@@ -94,9 +97,7 @@ public class RowValidator {
                 return false;
             }
         }
-//        else if (property.getEnum() != null && !property.getEnum().contains(value.toString())) {
-//            return false;
-//        }
+        else
         if (property.getFormat() != null && property.getFormat().equals("date-time")) {
 
 

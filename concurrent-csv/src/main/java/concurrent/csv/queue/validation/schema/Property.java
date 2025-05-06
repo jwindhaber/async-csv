@@ -1,12 +1,15 @@
 package concurrent.csv.queue.validation.schema;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class Property {
     private String type;
     private String format;
     private Integer index;
     private Integer maxLength;
     private String pattern;
-    private String[] _enum;
+    private Set<String> _enum = new HashSet<>();
 
     // Getters and setters
     public String getType() {
@@ -49,11 +52,11 @@ public class Property {
         this.pattern = pattern;
     }
 
-    public String[] getEnum() {
+    public Set<String>  getEnum() {
         return _enum;
     }
 
-    public void setEnum(String[] _enum) {
+    public void setEnum(Set<String>  _enum) {
         this._enum = _enum;
     }
 }
